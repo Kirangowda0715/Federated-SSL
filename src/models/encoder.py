@@ -1,0 +1,120 @@
+"""
+src/models/encoder.py
+---------------------
+Encoder backbone factory: ResNet50 or ViT-Small.
+
+Only the encoder is shared across hospitals in the federated setting.
+The decoder stays local (privacy + efficiency).
+"""
+
+import torch
+import torch.nn as nn
+from typing import Tuple
+
+
+# ─── ResNet50 Encoder ─────────────────────────────────────────────────────────
+
+class ResNet50Encoder(nn.Module):
+    """
+    ResNet50 backbone with the final FC layer replaced by a
+    linear projection head: Linear(2048 → embed_dim).
+    """
+
+    def __init__(self, embed_dim: int = 512):
+        super().__init__()
+        import torchvision.models as models
+
+        backbone = models.resnet50(weights=None)  # pretrained=False equivalent
+
+        # Remove the original avgpool + fc; we keep everything up to layer4
+        self.feature_extractor = nn.Sequential(
+            backbone.conv1,
+            backbone.bn1,
+            backbone.relu,
+            backbone.maxpool,
+            backbone.layer1,
+            backbone.layer2,
+            backbone.layer3,
+            backbone.layer4,
+        )
+        self.avgpool = backbone.avgpool           # Global average pool → (B, 2048, 1, 1)
+        self.projection = nn.Linear(2048, embed_dim)
+
+        self.embed_dim = embed_dim
+        self.feature_dim = 2048
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            x : (B, C, H, W) image tensor
+        Returns:
+            z : (B, embed_dim) embedding
+        """
+        feat = self.feature_extractor(x)          # (B, 2048, 7, 7)
+        feat = self.avgpool(feat)                  # (B, 2048, 1, 1)
+        feat = feat.flatten(1)                     # (B, 2048)
+        z = self.projection(feat)                  # (B, embed_dim)
+        return z
+
+
+# ─── ViT-Small Encoder ────────────────────────────────────────────────────────
+
+class ViTSmallEncoder(nn.Module):
+    """
+    ViT-Small (patch16, 224) from timm.
+    Head replaced with Linear(384 → embed_dim).
+    """
+
+    def __init__(self, embed_dim: int = 512):
+        super().__init__()
+        try:
+            import timm
+        except ImportError:
+            raise ImportError("timm is required for ViT-Small encoder. pip install timm")
+
+        self.vit = timm.create_model(
+            "vit_small_patch16_224",
+            pretrained=False,
+            num_classes=0,  # Remove classification head → returns CLS token (384-dim)
+        )
+        vit_dim = self.vit.embed_dim   # 384 for vit_small
+        self.projection = nn.Linear(vit_dim, embed_dim)
+
+        self.embed_dim = embed_dim
+        self.feature_dim = vit_dim
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            x : (B, C, H, W) image tensor (must be 224×224 for vit_small_patch16_224)
+        Returns:
+            z : (B, embed_dim) embedding
+        """
+        feat = self.vit(x)             # (B, 384) — CLS token representation
+        z = self.projection(feat)      # (B, embed_dim)
+        return z
+
+
+# ─── Factory ─────────────────────────────────────────────────────────────────
+
+def get_encoder(backbone: str = "resnet50", embed_dim: int = 512) -> nn.Module:
+    """
+    Create and return the encoder backbone.
+
+    Args:
+        backbone  : 'resnet50' or 'vit_small'
+        embed_dim : Output embedding dimensionality
+
+    Returns:
+        nn.Module encoder
+    """
+    backbone = backbone.lower().strip()
+
+    if backbone == "resnet50":
+        return ResNet50Encoder(embed_dim=embed_dim)
+    elif backbone in ("vit_small", "vit-small", "vit"):
+        return ViTSmallEncoder(embed_dim=embed_dim)
+    else:
+        raise ValueError(
+            f"Unknown backbone '{backbone}'. Choose from: 'resnet50', 'vit_small'."
+        )

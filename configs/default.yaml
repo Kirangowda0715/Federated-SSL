@@ -1,0 +1,42 @@
+data:
+  nih_path: data/raw/NIH/
+  shenzhen_path: data/raw/Shenzhen/
+  montgomery_path: data/raw/Montgomery/
+  image_size: 224
+  num_hospitals: 5
+  split_strategy: non_iid   # options: iid, non_iid
+
+model:
+  backbone: resnet50        # options: resnet50, vit_small
+  embed_dim: 512
+  mask_ratio: 0.75
+  decoder_depth: 4
+
+ssl:
+  epochs_per_round: 5
+  batch_size: 32
+  lr: 1.0e-4
+  optimizer: adamw
+
+federated:
+  rounds: 20
+  aggregation: fedavg       # options: fedavg, fedprox
+  fedprox_mu: 0.01
+
+finetuning:
+  few_shot_k: 5             # k-shot per class
+  epochs: 10
+  lr: 1.0e-3
+
+evaluation:
+  test_set: montgomery
+  metrics:
+    - auc
+    - accuracy
+    - sensitivity
+    - specificity
+    - f1
+
+logging:
+  log_dir: experiments/logs/
+  checkpoint_dir: experiments/checkpoints/

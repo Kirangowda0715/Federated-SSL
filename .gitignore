@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.env
+
+# Project specific
+data/
+experiments/checkpoints/
+experiments/logs/*.pt
+*.pt
+*.pth
+*.txt
+!requirements.txt
+!PROJECT_DOCUMENTATION.md
+!README.md
+!evaluate_trained_model.py
+
+# VS Code
+.vscode/
+.gemini/
+
+# Notebooks
+.ipynb_checkpoints
